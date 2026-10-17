@@ -4,6 +4,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import NavLinks from "@/components/NavLinks";
+import AuthControls from "@/components/AuthControls";
 
 const geist = Geist({
   subsets: ["latin"],
@@ -24,8 +25,9 @@ export default function RootLayout({
       <body className={`${geist.className} flex min-h-screen flex-col bg-slate-50 text-slate-900`}>
         <Header />
 
-        <div className="mx-auto w-full max-w-5xl px-6 py-4 print:hidden">
+        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-4 px-6 py-4 print:hidden">
           <NavLinks />
+          <AuthControls />
         </div>
 
         <div className="flex-1">{children}</div>

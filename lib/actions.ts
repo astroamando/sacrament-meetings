@@ -1,5 +1,7 @@
+
 "use server";
 
+import { auth } from "@/auth";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -56,6 +58,7 @@ function parseForm(formData: FormData) {
 }
 
 type Validated = z.infer<typeof schema>;
+
 function meetingFromInput(input: Validated): Omit<SacramentMeeting, "id"> {
   return {
     date: input.date,
@@ -64,12 +67,36 @@ function meetingFromInput(input: Validated): Omit<SacramentMeeting, "id"> {
     conducting: input.conducting,
     openingPrayer: input.openingPrayer,
     closingPrayer: input.closingPrayer,
-    openingHymn: { number: input.openingHymnNumber, title: input.openingHymnTitle },
-    sacramentHymn: { number: input.sacramentHymnNumber, title: input.sacramentHymnTitle },
-    closingHymn: { number: input.closingHymnNumber, title: input.closingHymnTitle },
-    announcements: input.announcements.split("\n").map(s => s.trim()).filter(Boolean),
-    wardBusiness: input.wardBusiness.split("\n").map(s => s.trim()).filter(Boolean).map(description => ({ description })),
-    speakers: input.speakers.split("\n").map(s => s.trim()).filter(Boolean).map(name => ({ name, topic: "", type: "speaker" as const })),
+    openingHymn: {
+      number: input.openingHymnNumber,
+      title: input.openingHymnTitle,
+    },
+    sacramentHymn: {
+      number: input.sacramentHymnNumber,
+      title: input.sacramentHymnTitle,
+    },
+    closingHymn: {
+      number: input.closingHymnNumber,
+      title: input.closingHymnTitle,
+    },
+    announcements: input.announcements
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean),
+    wardBusiness: input.wardBusiness
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((description) => ({ description })),
+    speakers: input.speakers
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((name) => ({
+        name,
+        topic: "",
+        type: "speaker" as const,
+      })),
     stakeBusiness: input.stakeBusiness,
   };
 }
@@ -78,17 +105,32 @@ export async function createMeeting(
   _previous: MeetingFormState,
   formData: FormData
 ): Promise<MeetingFormState> {
-  const parsed = parseForm(formData);
-  if (!parsed.success) {
-    return { message: "Please correct the highlighted fields.", errors: parsed.error.flatten().fieldErrors };
+  const session = await auth();
+
+  if (!session?.user) {
+    redirect("/login");
   }
+
+  const parsed = parseForm(formData);
+
+  if (!parsed.success) {
+    return {
+      message: "Please correct the highlighted fields.",
+      errors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
   let id: number;
+
   try {
     id = await createMeetingInDb(meetingFromInput(parsed.data));
   } catch (error) {
     console.error("Failed to create meeting", error);
-    return { message: "Unable to save the meeting. Please try again." };
+    return {
+      message: "Unable to save the meeting. Please try again.",
+    };
   }
+
   revalidatePath("/meetings");
   redirect(`/meetings/${id}`);
 }
@@ -98,25 +140,55 @@ export async function updateMeeting(
   _previous: MeetingFormState,
   formData: FormData
 ): Promise<MeetingFormState> {
-  const parsed = parseForm(formData);
-  if (!parsed.success) {
-    return { message: "Please correct the highlighted fields.", errors: parsed.error.flatten().fieldErrors };
+  const session = await auth();
+
+  if (!session?.user) {
+    redirect("/login");
   }
+
+  const parsed = parseForm(formData);
+
+  if (!parsed.success) {
+    return {
+      message: "Please correct the highlighted fields.",
+      errors: parsed.error.flatten().fieldErrors,
+    };
+  }
+
   try {
-    const updated = await updateMeetingInDb(id, meetingFromInput(parsed.data));
-    if (!updated) return { message: "This meeting no longer exists." };
+    const updated = await updateMeetingInDb(
+      id,
+      meetingFromInput(parsed.data)
+    );
+
+    if (!updated) {
+      return { message: "This meeting no longer exists." };
+    }
   } catch (error) {
     console.error("Failed to update meeting", error);
-    return { message: "Unable to save the changes. Please try again." };
+    return {
+      message: "Unable to save the changes. Please try again.",
+    };
   }
+
   revalidatePath("/meetings");
   revalidatePath(`/meetings/${id}`);
   redirect(`/meetings/${id}`);
 }
 
 export async function deleteMeeting(id: number): Promise<void> {
-  if (!Number.isInteger(id) || id < 1) throw new Error("Invalid meeting ID");
+  const session = await auth();
+
+  if (!session?.user) {
+    redirect("/login");
+  }
+
+  if (!Number.isInteger(id) || id < 1) {
+    throw new Error("Invalid meeting ID");
+  }
+
   await deleteMeetingFromDb(id);
+
   revalidatePath("/meetings");
   redirect("/meetings");
 }
